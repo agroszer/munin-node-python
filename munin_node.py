@@ -46,7 +46,7 @@ THE SOFTWARE.
     timeout <seconds> (not used)
 
     See http://munin.projects.linpro.no/wiki/plugin-conf.d for more details
-    
+
 '''
 
 __author__="Chris Holcombe"
@@ -56,20 +56,21 @@ VERSION = "0.1"
 import sys
 import os.path
 import imp
+import logging
+import time
 
 import SocketServer
 import hashlib
 import optparse
 import socket
-import traceback
 
 debug = 1
 
+logger = logging.Logger('munin-node')
+
 if debug:
     def DBG(*args):
-        for w in args[:-1]:
-            print w,
-        print args[-1]
+        logger.info(' '.join([str(a) for a in args]))
 else:
     def DBG(*args):
         pass
@@ -78,7 +79,10 @@ if sys.platform == "win32":
     import os
     import msvcrt
     DBG("Setting windows binary write mode")
-    msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
+    try:
+        msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
+    except:
+        pass
 
 hostname = socket.gethostname()
 full_hostname = socket.getfqdn(hostname)
@@ -101,12 +105,12 @@ def load_module(name, config, plugin_dir):
         # must be an external plugin
         # need to know which command to run
         if config.has_key("command"):
-            fin = open(plugin_dir + "/external_plugin.py", "rb")
+            fin = open("external_plugin.py", "rb")
             m = hashlib.md5()
             m.update(plugin)
             mod = imp.load_source(m.hexdigest(), plugin, fin)
             mod.command = config["command"]
-            return ex_mod
+            return mod
 
         print >>sys.stderr, "Could not find command parameter for external " \
                             "plugin. Please fix config file"
@@ -182,62 +186,97 @@ class MuninHandler(SocketServer.StreamRequestHandler):
     """
 
     allow_reuse_address = True
+    timeout = 60
+
+    def write(self, data):
+        try:
+            self.wfile.write(data)
+            self.wfile.flush()
+        except Exception, e:
+            DBG("socket write failed %s" % e)
+            elapsed = time.time() - self.start
+            DBG("elapsed: %s" % elapsed)
+            DBG(data)
 
     def handle(self):
-        self.wfile.write("# munin node at %s\n" % full_hostname)
+        self.start = time.time()
+        self.write("# munin node at %s\n" % full_hostname)
 
-        while True:
-            line = self.rfile.readline().strip()
-            try:
-                cmd, args = line.split(" ", 1)
-            except ValueError:
-                cmd = line
-                args = ""
+        try:
+            while True:
+                line = self.rfile.readline().strip()
+                try:
+                    cmd, args = line.split(" ", 1)
+                except ValueError:
+                    cmd = line
+                    args = ""
 
-            DBG("Command %s" % line)
+                DBG("Command %s" % line)
 
-            if not cmd or cmd == "quit":
-                break
+                if not cmd or cmd == "quit":
+                    break
 
-            if cmd == "list":
-                # List all plugins that are available
-                self.wfile.write(" ".join(modules.keys()) + "\n")
-            elif cmd == "nodes":
-                # We just support this host
-                self.wfile.write("%s\n.\n" % full_hostname)
-            elif cmd == "config":
-                # display the config information of the plugin
-                if not args:
-                    self.wfile.write("# Unknown service\n.\n" )
-                else:
-                    config = get_module_config(args)
-                    if config is None:
-                        self.wfile.write("# Unknown service\n.\n")
+                if cmd == "list":
+                    # List all plugins that are available
+                    self.write(" ".join(modules.keys()) + "\n")
+                elif cmd == "nodes":
+                    # We just support this host
+                    self.write("%s\n.\n" % full_hostname)
+                elif cmd == "config":
+                    # display the config information of the plugin
+                    if not args:
+                        self.write("# Unknown service\n.\n" )
                     else:
-                        self.wfile.write("\n".join(config) + "\n.\n")
-            elif cmd == "fetch":
-                # display the data information as returned by the plugin
-                if not args:
-                    self.wfile.write("# Unknown service\n.\n")
-                else:
-                    data = get_module_data(args)
-                    if data is None:
-                        self.wfile.write("# Unknown service\n.\n")
+                        config = get_module_config(args)
+                        if config is None:
+                            self.write("# Unknown service\n.\n")
+                        else:
+                            self.write("\n".join(config) + "\n.\n")
+                elif cmd == "fetch":
+                    # display the data information as returned by the plugin
+                    if not args:
+                        self.write("# Unknown service\n.\n")
                     else:
-                        self.wfile.write("\n".join(data) + "\n.\n")
-            elif cmd == "version":
-                # display the server version
-                self.wfile.write("munin node on %s version: %s\n" %
-                                 (full_hostname, VERSION))
-            else:
-                self.wfile.write("# Unknown command. Try list, nodes, " \
-                                 "config, fetch, version or quit\n")
+                        data = get_module_data(args)
+                        if data is None:
+                            self.write("# Unknown service\n.\n")
+                        else:
+                            self.write("\n".join(data) + "\n.\n")
+                elif cmd == "version":
+                    # display the server version
+                    self.write("munin node on %s version: %s\n" %
+                                     (full_hostname, VERSION))
+                else:
+                    self.write("# Unknown command. Try list, nodes, " \
+                                     "config, fetch, version or quit\n")
+        except Exception, e:
+            self.write("ERROR")
+            DBG("exception %s" % e)
+        DBG("End of connection")
 
 
 def main():
+    here = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(here)
+
+    # Set up logger handler
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter('%(asctime)s: %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+    #handler = logging.RotatingFileHandler(os.path.join(here, 'munin-node.log'),
+    #    maxBytes=10*1024*1024, backupCount=10)
+    handler = logging.FileHandler(os.path.join(here, 'munin-node.log'))
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+    logger.setLevel(logging.INFO)
+
     parser = optparse.OptionParser(usage="usage: %prog [options] arg",
                                    version="%prog "+VERSION)
-    parser.add_option("-c", dest="config", help="config file")
+    parser.add_option("-c", dest="config", help="config file",
+                      default='munin_node.conf')
     parser.add_option("-p", dest="pdir", help="plugin directory")
 
     opts, args = parser.parse_args()
@@ -251,9 +290,7 @@ def main():
         sys.exit(1)
 
     if not plugin_dir:
-        print >>sys.stderr, "Please specify the plugin directory with the -p option"
-        parser.print_help()
-        sys.exit(1)
+        plugin_dir = os.path.join(os.path.dirname(__file__), 'plugins')
 
     if not os.path.isdir(plugin_dir):
         print >>sys.stderr, "Can not find plugin directory: %s " % plugin_dir
@@ -267,13 +304,30 @@ def main():
         if not mod:
             print >>sys.stderr, "Failed to load plugin: %s" % k
         else:
-            modules[mod.get_name()] = mod
-            DBG("Plugin %s loaded" % k)
+            nname = mod.get_name()
+            modules[nname] = mod
+            DBG("Plugin %s (%s) loaded" % (nname, k))
+
+    for fname in os.listdir(plugin_dir):
+        name, ext = os.path.splitext(fname)
+        if ext == '.exe':
+            fullfname = os.path.abspath(os.path.join(plugin_dir, fname))
+            conf = {}
+            conf['native'] = False
+            conf['command'] = fullfname
+            mod = load_module(fname, conf, plugin_dir)
+            if not mod:
+                print >>sys.stderr, "Failed to load plugin: %s" % fname
+            else:
+                nname = mod.get_name()
+                modules[nname] = mod
+                DBG("Plugin %s (%s) loaded" % (nname, fname))
 
     try:
         # Munin default port is 4949
         host, port = "0.0.0.0", 4949
 
+        socket.setdefaulttimeout(60)
         server = SocketServer.TCPServer((host, port), MuninHandler)
 
         DBG("serving munin ...")

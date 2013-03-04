@@ -29,33 +29,75 @@ THE SOFTWARE.
 __author__="Chris Holcombe"
 __date__ ="$Mar 4, 2010 12:28:01 PM$"
 
-from subprocess import Popen,PIPE
+import logging
+import subprocess
+import sys
 
 #whether or not this command should be run from a shell.
 shell=True
 #command to run to call the script
 command=None
 
+logger = logging.Logger('munin-node')
+
+def do(cmd, cwd=None, captureOutput=True, exitOnError=False):
+    logger.debug('Command: ' + cmd)
+    try:
+        if captureOutput:
+            stdout = stderr = subprocess.PIPE
+        else:
+            stdout = stderr = None
+        p = subprocess.Popen(
+            cmd, stdout=stdout, stderr=stderr,
+            shell=shell, cwd=cwd)
+        stdout, stderr = p.communicate()
+        if stdout is None:
+            stdout = "See output above"
+        if stderr is None:
+            stderr = "See output above"
+    finally:
+        try:
+            p.stdin.close()
+        except:
+            pass
+        try:
+            p.stdout.close()
+        except:
+            pass
+    if p.returncode != 0:
+        logger.error(u'An error occurred while running command: %s' %cmd)
+        logger.error('Error Output: \n%s' % stderr)
+        if exitOnError:
+            sys.exit(p.returncode)
+    logger.debug('Output: \n%s' % stdout)
+    return stdout
+
 def get_name():
     #get the name and strip off newline chars
-    name = Popen(command + " name", stdout=PIPE, shell=shell).stdout.read().strip('\r\n')
+    name = do(command + " name").strip('\r\n')
     return name
 
 def get_config():
     #get the data and strip off newline chars ( they mess up formatting of output )
     data = []
-    config = Popen(command + " config", stdout=PIPE, shell=shell).stdout.read()
+    config = do(command + " config")
     lines = config.split("\n")
     for line in lines:
-        data.append(line)
+        line = line.strip()
+        # strip off empty lines and evtl .
+        if line and line != '.':
+            data.append(line)
     return data
 
 def get_data():
     tmp = []
-    data = Popen(command, stdout=PIPE, shell=shell).stdout.read()
+    data = do(command)
     lines = data.split("\n")
     for line in lines:
-        tmp.append(line)
+        line = line.strip()
+        # strip off empty lines and evtl .
+        if line and line != '.':
+            tmp.append(line)
     return tmp
 
 def main():
