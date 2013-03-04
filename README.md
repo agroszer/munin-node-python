@@ -14,3 +14,4 @@ inetd-ish servers.
 TODOs:
 - big code cleanup
 - use the same config format as munin.conf does, with some extras
+- add some (unit) tests
