@@ -13,4 +13,3 @@ inetd-ish servers.
 
 TODOs:
 - big code cleanup
-- multi connect works, but multi command execution does not
