@@ -177,7 +177,7 @@ def parse_config_file(cfile):
 
     return config
 
-class MuninHandler(SocketServer.ThreadingMixIn, SocketServer.StreamRequestHandler):
+class MuninHandler(SocketServer.StreamRequestHandler):
     """
     Munin server implementation
 
@@ -328,7 +328,7 @@ def main():
         host, port = "0.0.0.0", 4949
 
         socket.setdefaulttimeout(60)
-        server = SocketServer.TCPServer((host, port), MuninHandler)
+        server = SocketServer.ThreadingTCPServer((host, port), MuninHandler)
 
         DBG("serving munin ...")
         server.serve_forever()
