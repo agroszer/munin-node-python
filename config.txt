@@ -1,0 +1,21 @@
+#comments
+
+[java_graph.py]
+user test
+group test
+command python something.py -args
+native yes
+#host_name grimbergen.irt.drexel.edu
+#timeout 20
+
+[java_vm_time.py]
+native yes
+
+[script.sh]
+native no
+command bash /home/cjh66/NetBeansProjects/Munin_Node/plugins/script.sh 
+user test
+
+[script2.sh]
+native no
+user test
