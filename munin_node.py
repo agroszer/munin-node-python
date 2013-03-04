@@ -177,7 +177,7 @@ def parse_config_file(cfile):
 
     return config
 
-class MuninHandler(SocketServer.StreamRequestHandler):
+class MuninHandler(SocketServer.ThreadingMixIn, SocketServer.StreamRequestHandler):
     """
     Munin server implementation
 
