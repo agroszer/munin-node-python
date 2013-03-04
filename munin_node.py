@@ -57,6 +57,7 @@ import sys
 import os.path
 import imp
 import logging
+import logging.handlers
 import time
 
 import SocketServer
@@ -265,9 +266,10 @@ def main():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    #handler = logging.RotatingFileHandler(os.path.join(here, 'munin-node.log'),
-    #    maxBytes=10*1024*1024, backupCount=10)
-    handler = logging.FileHandler(os.path.join(here, 'munin-node.log'))
+    handler = logging.handlers.RotatingFileHandler(
+        os.path.join(here, 'munin-node.log'),
+        maxBytes=10*1024*1024, backupCount=10)
+    #handler = logging.FileHandler(os.path.join(here, 'munin-node.log'))
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
