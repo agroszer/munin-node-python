@@ -65,21 +65,12 @@ import hashlib
 import optparse
 import socket
 
-debug = 1
-
-logger = logging.Logger('munin-node')
-
-if debug:
-    def DBG(*args):
-        logger.info(' '.join([str(a) for a in args]))
-else:
-    def DBG(*args):
-        pass
+LOGGER = logging.Logger('munin-node')
 
 if sys.platform == "win32":
     import os
     import msvcrt
-    DBG("Setting windows binary write mode")
+    LOGGER.info("Setting windows binary write mode")
     try:
         msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
     except:
@@ -90,10 +81,11 @@ full_hostname = socket.getfqdn(hostname)
 
 modules = {}
 
+
 def load_module(name, config, plugin_dir):
     plugin = plugin_dir + "/" + name
     if not os.path.isfile(plugin):
-        print >>sys.stderr, "Could not locate plugin: %s - ignoring ..." % plugin
+        LOGGER.error("Could not locate plugin: %s - ignoring ...", plugin)
         return None
 
     try:
@@ -113,32 +105,31 @@ def load_module(name, config, plugin_dir):
             mod.command = config["command"]
             return mod
 
-        print >>sys.stderr, "Could not find command parameter for external " \
-                            "plugin. Please fix config file"
-        print >>sys.stderr, "Ignoring plugin: %s" % plugin
+        LOGGER.error("Could not find command parameter for external " \
+                     "plugin. Please fix config file")
+        LOGGER.error("Ignoring plugin: %s", plugin)
         return None
     finally:
         try:
             fin.close()
         except:
             pass
-#    except:
-#        traceback.print_exc(file = sys.stderr)
-#        raise
+
 
 def get_module_data(name):
     try:
         return modules[name].get_data()
     except KeyError:
-        print >>sys.stderr, "No such module:", name
+        LOGGER.error("No such module: %s", name)
 
     return None
+
 
 def get_module_config(name):
     try:
         return modules[name].get_config()
     except KeyError:
-        print >>sys.stderr, "No such module:", name
+        LOGGER.error("No such module: %s", name)
 
     return None
 
@@ -156,8 +147,8 @@ def parse_config_file(cfile):
 
         if line.startswith("["):
             if not line.endswith("]"):
-                print >>sys.stderr, "The config files contains an invalid " \
-                                    "section header (no closing bracket)"
+                LOGGER.error("The config files contains an invalid " \
+                             "section header (no closing bracket)")
             else:
                 name = line[1:-1]
                 config[name] = {}
@@ -165,18 +156,18 @@ def parse_config_file(cfile):
             try:
                 k, v = line.split(" ", 1)
             except ValueError:
-                print >>sys.stderr, "The config file contains an invalid " \
-                                    "parameter without value"
+                LOGGER.error("The config file contains an invalid " \
+                             "parameter without value")
                 k = line
                 v = ""
 
             try:
                 config[name][k] = v
             except TypeError:
-                print >>sys.stderr, "The config file contains invalid chars"
-                print >>sys.stderr, "Line: " + name + " " + k + " " + v
-
+                LOGGER.error("The config file contains invalid chars" \
+                             "Line: " + name + " " + k + " " + v)
     return config
+
 
 class MuninHandler(SocketServer.StreamRequestHandler):
     """
@@ -193,14 +184,11 @@ class MuninHandler(SocketServer.StreamRequestHandler):
         try:
             self.wfile.write(data)
             self.wfile.flush()
-        except Exception, e:
-            DBG("socket write failed %s" % e)
-            elapsed = time.time() - self.start
-            DBG("elapsed: %s" % elapsed)
-            DBG(data)
+        except Exception:
+            LOGGER.exception("socket write failed %s")
+            LOGGER.debug(data)
 
     def handle(self):
-        self.start = time.time()
         self.write("# munin node at %s\n" % full_hostname)
 
         try:
@@ -212,7 +200,7 @@ class MuninHandler(SocketServer.StreamRequestHandler):
                     cmd = line
                     args = ""
 
-                DBG("Command %s" % line)
+                LOGGER.info("Command %s", line)
 
                 if not cmd or cmd == "quit":
                     break
@@ -226,7 +214,7 @@ class MuninHandler(SocketServer.StreamRequestHandler):
                 elif cmd == "config":
                     # display the config information of the plugin
                     if not args:
-                        self.write("# Unknown service\n.\n" )
+                        self.write("# Unknown service\n.\n")
                     else:
                         config = get_module_config(args)
                         if config is None:
@@ -246,14 +234,14 @@ class MuninHandler(SocketServer.StreamRequestHandler):
                 elif cmd == "version":
                     # display the server version
                     self.write("munin node on %s version: %s\n" %
-                                     (full_hostname, VERSION))
+                               (full_hostname, VERSION))
                 else:
                     self.write("# Unknown command. Try list, nodes, " \
-                                     "config, fetch, version or quit\n")
-        except Exception, e:
+                               "config, fetch, version or quit\n")
+        except Exception:
             self.write("ERROR")
-            DBG("exception %s" % e)
-        DBG("End of connection")
+            LOGGER.exception("exception")
+        LOGGER.info("End of connection")
 
 
 def main():
@@ -264,16 +252,16 @@ def main():
     handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter('%(asctime)s: %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    LOGGER.addHandler(handler)
 
     handler = logging.handlers.RotatingFileHandler(
         os.path.join(here, 'munin-node.log'),
         maxBytes=10*1024*1024, backupCount=10)
     #handler = logging.FileHandler(os.path.join(here, 'munin-node.log'))
     handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    LOGGER.addHandler(handler)
 
-    logger.setLevel(logging.INFO)
+    LOGGER.setLevel(logging.INFO)
 
     parser = optparse.OptionParser(usage="usage: %prog [options] arg",
                                    version="%prog "+VERSION)
@@ -287,7 +275,7 @@ def main():
     config_file = opts.config
 
     if not config_file:
-        print >>sys.stderr, "Please specify the config file with the -c option"
+        LOGGER.error("Please specify the config file with the -c option")
         parser.print_help()
         sys.exit(1)
 
@@ -295,20 +283,20 @@ def main():
         plugin_dir = os.path.join(os.path.dirname(__file__), 'plugins')
 
     if not os.path.isdir(plugin_dir):
-        print >>sys.stderr, "Can not find plugin directory: %s " % plugin_dir
+        LOGGER.error("Can not find plugin directory: %s ", plugin_dir)
         sys.exit(1)
 
     config = parse_config_file(file(config_file, "r"))
 
-    DBG("Loading modules ...")
+    LOGGER.info("Loading modules ...")
     for k, v in config.items():
         mod = load_module(k, v, plugin_dir)
         if not mod:
-            print >>sys.stderr, "Failed to load plugin: %s" % k
+            LOGGER.error("Failed to load plugin: %s", k)
         else:
             nname = mod.get_name()
             modules[nname] = mod
-            DBG("Plugin %s (%s) loaded" % (nname, k))
+            LOGGER.info("Plugin %s (%s) loaded" % (nname, k))
 
     for fname in os.listdir(plugin_dir):
         name, ext = os.path.splitext(fname)
@@ -319,11 +307,11 @@ def main():
             conf['command'] = fullfname
             mod = load_module(fname, conf, plugin_dir)
             if not mod:
-                print >>sys.stderr, "Failed to load plugin: %s" % fname
+                LOGGER.error("Failed to load plugin: %s", fname)
             else:
                 nname = mod.get_name()
                 modules[nname] = mod
-                DBG("Plugin %s (%s) loaded" % (nname, fname))
+                LOGGER.info("Plugin %s (%s) loaded" % (nname, fname))
 
     try:
         # Munin default port is 4949
@@ -332,10 +320,10 @@ def main():
         socket.setdefaulttimeout(60)
         server = SocketServer.ThreadingTCPServer((host, port), MuninHandler)
 
-        DBG("serving munin ...")
+        LOGGER.info("serving munin ...")
         server.serve_forever()
     except KeyboardInterrupt:
-        print " received, terminating ..."
+        LOGGER.info("KeyboardInterrupt received, terminating ...")
 
 if __name__ == "__main__":
     main()
